@@ -17,10 +17,31 @@ function parseHour(time) {
   return h;
 }
 
+/**
+ * Check whether a stored field "matches" a selected filter value.
+ * Several fields in our data may contain multiple values joined by ", "
+ * (e.g. cause = "Drunk driving, Tailgating"). We treat the field as a
+ * set of comma-separated tokens and match against any of them.
+ */
+function multiMatch(fieldValue, selected) {
+  if (selected === 'all') return true;
+  if (!fieldValue) return false;
+  const tokens = String(fieldValue).split(',').map((s) => s.trim());
+  return tokens.includes(selected);
+}
+
 const DEFAULT_FILTERS = {
   year: 'all',
   accidentType: 'all',
   cause: 'all',
+  accidentSpot: 'all',
+  vehicleType: 'all',
+  statusOfVictim: 'all',
+  typeOfVictim: 'all',
+  // 2021-only filters
+  roadCondition: 'all',
+  weather: 'all',
+  mechanicalFailure: 'all',
   division: 'all',
   dzongkhag: 'all',
   gewog: 'all',
@@ -32,6 +53,7 @@ const DEFAULT_FILTERS = {
   showAll: true,
   showFatal: true,
   showInjured: true,
+  showVehicleDamage: true,
 };
 
 export default function App() {
@@ -58,18 +80,27 @@ export default function App() {
   }, []);
 
   // Base filtered set — applies year + categorical filters + free-text place search + time-of-day window.
-  // Severity checkboxes (showAll / showFatal / showInjured) do NOT narrow this —
+  // Map severity checkboxes (showAll / showFatal / showInjured / showVehicleDamage) do NOT narrow this —
   // they only decide which subset gets rendered on the map.
   const filtered = useMemo(() => {
     const tStart = filters.timeStart;
     const tEnd = filters.timeEnd;
-    // If the slider covers the full day, skip the time filter altogether (faster + lets records with no time pass through)
     const timeFilterActive = !(tStart === 0 && tEnd === 24);
 
     return allData.filter((a) => {
       if (filters.year !== 'all' && a.year !== filters.year) return false;
-      if (filters.accidentType !== 'all' && a.accident_type !== filters.accidentType) return false;
-      if (filters.cause !== 'all' && a.cause !== filters.cause) return false;
+      if (!multiMatch(a.accident_type, filters.accidentType)) return false;
+      if (!multiMatch(a.cause, filters.cause)) return false;
+      if (filters.accidentSpot !== 'all' && a.accident_spot !== filters.accidentSpot) return false;
+      if (filters.vehicleType !== 'all' && a.vehicle_type !== filters.vehicleType) return false;
+      if (filters.statusOfVictim !== 'all' && a.status_of_victim !== filters.statusOfVictim) return false;
+      if (filters.typeOfVictim !== 'all') {
+        const arr = Array.isArray(a.type_of_victim) ? a.type_of_victim : [];
+        if (!arr.includes(filters.typeOfVictim)) return false;
+      }
+      if (!multiMatch(a.road_condition, filters.roadCondition)) return false;
+      if (!multiMatch(a.weather, filters.weather)) return false;
+      if (!multiMatch(a.mechanical_failure, filters.mechanicalFailure)) return false;
       if (filters.division !== 'all' && a.division !== filters.division) return false;
       if (filters.dzongkhag !== 'all' && a.dzongkhag !== filters.dzongkhag) return false;
       if (filters.gewog !== 'all' && a.gewog !== filters.gewog) return false;
@@ -79,38 +110,75 @@ export default function App() {
       }
       if (timeFilterActive) {
         const h = parseHour(a.time);
-        if (h == null) return false;  // exclude records without parseable time when slider is active
-        // Window is [tStart, tEnd) — accept hours strictly less than tEnd
+        if (h == null) return false;
         if (h < tStart || h >= tEnd) return false;
       }
       return true;
     });
   }, [allData, filters]);
 
-  // What goes on the map: geocoded points only (2022–2025 MVA data) further
-  // filtered by the severity layer checkboxes.
+  // What goes on the map: geocoded points only, filtered by the severity layer checkboxes.
+  // The four toggles work as a union — each checkbox adds its category to the map.
+  // showAll acts as a master switch: when on, everything that survived `filtered` shows.
   const mapData = useMemo(() => {
     const points = filtered.filter((a) => a.lat != null && a.lon != null);
     return points.filter((a) => {
       const fatal = (a.deaths || 0) > 0;
-      const hasInjured = (a.injured || 0) > 0;
+      const hasInjured = !fatal && (a.injured || 0) > 0;
+      const damageOnly = !fatal && !hasInjured;
       if (filters.showAll) return true;
       if (filters.showFatal && fatal) return true;
       if (filters.showInjured && hasInjured) return true;
+      if (filters.showVehicleDamage && damageOnly) return true;
       return false;
     });
-  }, [filtered, filters.showAll, filters.showFatal, filters.showInjured]);
+  }, [filtered, filters.showAll, filters.showFatal, filters.showInjured, filters.showVehicleDamage]);
 
+  // Build dropdown option lists. For multi-value fields (cause / accident_type /
+  // road_condition / weather / mechanical_failure) we tokenize on ", " so the
+  // dropdown shows atomic values instead of joined strings like "Fog, Rain".
   const optionLists = useMemo(() => {
     const years = [...new Set(allData.map((a) => a.year).filter((y) => y >= 2021 && y <= 2025))].sort();
-    const accidentTypes = [...new Set(allData.map((a) => a.accident_type).filter(Boolean))].sort();
-    const causes = [...new Set(allData.map((a) => a.cause).filter(Boolean))].sort();
+
+    const splitUnique = (key) => {
+      const set = new Set();
+      for (const a of allData) {
+        const v = a[key];
+        if (!v) continue;
+        for (const tok of String(v).split(',')) {
+          const t = tok.trim();
+          if (t) set.add(t);
+        }
+      }
+      return [...set].sort();
+    };
+
+    const accidentTypes = splitUnique('accident_type');
+    const causes = splitUnique('cause');
+    const roadConditions = splitUnique('road_condition');
+    const weathers = splitUnique('weather');
+    const mechanicalFailures = splitUnique('mechanical_failure');
+
+    const accidentSpots = [...new Set(allData.map((a) => a.accident_spot).filter(Boolean))].sort();
+    const vehicleTypes = [...new Set(allData.map((a) => a.vehicle_type).filter(Boolean))].sort();
+    const statusesOfVictim = [...new Set(allData.map((a) => a.status_of_victim).filter(Boolean))].sort();
+    const typesOfVictim = (() => {
+      const set = new Set();
+      for (const a of allData) {
+        if (Array.isArray(a.type_of_victim)) {
+          for (const t of a.type_of_victim) {
+            const x = String(t).trim();
+            if (x) set.add(x);
+          }
+        }
+      }
+      return [...set].sort();
+    })();
     const divisions = [...new Set(allData.map((a) => a.division).filter(Boolean))].sort();
     const dzongkhags = [...new Set(allData.map((a) => a.dzongkhag).filter(Boolean))].sort();
     const gewogs = [...new Set(allData.map((a) => a.gewog).filter(Boolean))].sort();
 
-    // Build autocomplete pool: union of `place`/`location` strings + gewog names.
-    // We dedupe case-insensitively but keep the original casing for display.
+    // Place autocomplete pool: place/location/gewog (case-insensitive dedupe)
     const placeMap = new Map();
     const add = (s) => {
       if (!s || typeof s !== 'string') return;
@@ -126,10 +194,31 @@ export default function App() {
     }
     const places = [...placeMap.values()].sort((a, b) => a.localeCompare(b));
 
-    return { years, accidentTypes, causes, divisions, dzongkhags, gewogs, places };
+    return {
+      years, accidentTypes, causes, accidentSpots, vehicleTypes,
+      statusesOfVictim, typesOfVictim,
+      roadConditions, weathers, mechanicalFailures,
+      divisions, dzongkhags, gewogs, places,
+    };
   }, [allData]);
 
   const setFilter = (key, value) => setFilters((f) => ({ ...f, [key]: value }));
+
+  /**
+   * When the year filter changes, also clear any 2021-only filter values that
+   * would otherwise become invisible (and silently keep filtering) once the
+   * UI hides them. We only clear if leaving 2021.
+   */
+  const setYearFilter = (newYear) => {
+    setFilters((f) => {
+      const leaving2021 = f.year === 2021 && newYear !== 2021;
+      if (leaving2021) {
+        return { ...f, year: newYear, roadCondition: 'all', weather: 'all', mechanicalFailure: 'all' };
+      }
+      return { ...f, year: newYear };
+    });
+  };
+
   const resetFilters = () => setFilters(DEFAULT_FILTERS);
 
   if (loading) {
@@ -165,8 +254,10 @@ export default function App() {
         <Filters
           filters={filters}
           setFilter={setFilter}
+          setYearFilter={setYearFilter}
           reset={resetFilters}
           options={optionLists}
+          show2021Fields={has2021Selected}
         />
 
         <div className="content">

@@ -701,3 +701,36 @@ html, body, #root {
   color: var(--text);
   margin: 0 0 12px 0;
 }
+
+/* ---- Section divider inside the filter sidebar (for 2021-only group) ---- */
+.filter-section-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0 4px 0;
+  color: var(--text-light);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.filter-section-divider::before,
+.filter-section-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.filter-section-divider:empty {
+  margin: 4px 0;
+}
+
+.filter-section-divider:empty::before,
+.filter-section-divider:empty::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}

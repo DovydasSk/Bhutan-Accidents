@@ -1,14 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-// Format hour as "HH:00" — 0 -> "00:00", 14 -> "14:00", 24 -> "24:00"
 function fmtHour(h) {
   return `${String(h).padStart(2, '0')}:00`;
 }
 
 /**
  * Dual-thumb range slider for picking an hour-of-day window [start, end].
- * Two stacked <input type="range"> with a track + filled segment behind them.
- * Pointer-events trick (none on inputs, auto on thumbs) lets both thumbs be grabbed.
  */
 function TimeRangeSlider({ value, onChange }) {
   const [start, end] = value;
@@ -35,47 +32,23 @@ function TimeRangeSlider({ value, onChange }) {
       </div>
       <div className="time-range-slider">
         <div className="time-range-track" />
-        <div
-          className="time-range-fill"
-          style={{ left: `${leftPct}%`, width: `${rightPct - leftPct}%` }}
-        />
-        <input
-          type="range"
-          min={min}
-          max={max}
-          step={1}
-          value={start}
-          onChange={handleStart}
-        />
-        <input
-          type="range"
-          min={min}
-          max={max}
-          step={1}
-          value={end}
-          onChange={handleEnd}
-        />
+        <div className="time-range-fill" style={{ left: `${leftPct}%`, width: `${rightPct - leftPct}%` }} />
+        <input type="range" min={min} max={max} step={1} value={start} onChange={handleStart} />
+        <input type="range" min={min} max={max} step={1} value={end} onChange={handleEnd} />
       </div>
       <div className="time-range-labels">
-        <span>00:00</span>
-        <span>12:00</span>
-        <span>24:00</span>
+        <span>00:00</span><span>12:00</span><span>24:00</span>
       </div>
     </div>
   );
 }
 
-/**
- * Autocomplete text input for "Place of occurrence".
- * Shows suggestions from a provided pool (places + gewogs) as the user types.
- * Keyboard nav: ArrowUp/Down/Enter/Esc.
- */
+/** Autocomplete text input for "Place of occurrence". */
 function PlaceAutocomplete({ value, onChange, suggestions }) {
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
   const wrapRef = useRef(null);
 
-  // Filter and rank suggestions: starts-with first, then contains
   const matches = useMemo(() => {
     const q = value.trim().toLowerCase();
     if (!q || q.length < 2) return [];
@@ -91,11 +64,8 @@ function PlaceAutocomplete({ value, onChange, suggestions }) {
     return [...starts, ...contains].slice(0, 10);
   }, [value, suggestions]);
 
-  useEffect(() => {
-    setHighlight(0);
-  }, [value]);
+  useEffect(() => { setHighlight(0); }, [value]);
 
-  // Click outside -> close
   useEffect(() => {
     const onDocClick = (e) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
@@ -104,39 +74,22 @@ function PlaceAutocomplete({ value, onChange, suggestions }) {
     return () => document.removeEventListener('mousedown', onDocClick);
   }, []);
 
-  const pick = (s) => {
-    onChange(s);
-    setOpen(false);
-  };
-
+  const pick = (s) => { onChange(s); setOpen(false); };
   const onKeyDown = (e) => {
     if (!open || matches.length === 0) return;
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setHighlight((h) => (h + 1) % matches.length);
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setHighlight((h) => (h - 1 + matches.length) % matches.length);
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      pick(matches[highlight]);
-    } else if (e.key === 'Escape') {
-      setOpen(false);
-    }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHighlight((h) => (h + 1) % matches.length); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlight((h) => (h - 1 + matches.length) % matches.length); }
+    else if (e.key === 'Enter') { e.preventDefault(); pick(matches[highlight]); }
+    else if (e.key === 'Escape') { setOpen(false); }
   };
 
-  // Highlight matching substring inside the suggestion label
   const renderItem = (s) => {
     const q = value.trim();
     if (!q) return s;
     const idx = s.toLowerCase().indexOf(q.toLowerCase());
     if (idx === -1) return s;
     return (
-      <>
-        {s.slice(0, idx)}
-        <span className="match">{s.slice(idx, idx + q.length)}</span>
-        {s.slice(idx + q.length)}
-      </>
+      <>{s.slice(0, idx)}<span className="match">{s.slice(idx, idx + q.length)}</span>{s.slice(idx + q.length)}</>
     );
   };
 
@@ -146,10 +99,7 @@ function PlaceAutocomplete({ value, onChange, suggestions }) {
         type="text"
         placeholder="Search location…"
         value={value}
-        onChange={(e) => {
-          onChange(e.target.value);
-          setOpen(true);
-        }}
+        onChange={(e) => { onChange(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
         onKeyDown={onKeyDown}
         autoComplete="off"
@@ -163,11 +113,7 @@ function PlaceAutocomplete({ value, onChange, suggestions }) {
               aria-selected={i === highlight}
               className={`autocomplete-item ${i === highlight ? 'highlighted' : ''}`}
               onMouseEnter={() => setHighlight(i)}
-              onMouseDown={(e) => {
-                // mousedown so blur doesn't close before click registers
-                e.preventDefault();
-                pick(s);
-              }}
+              onMouseDown={(e) => { e.preventDefault(); pick(s); }}
             >
               {renderItem(s)}
             </div>
@@ -178,7 +124,20 @@ function PlaceAutocomplete({ value, onChange, suggestions }) {
   );
 }
 
-export default function Filters({ filters, setFilter, reset, options }) {
+/** Tiny helper for the standard "label + select" filter group. */
+function SelectFilter({ label, value, onChange, all = 'all', allLabel, options }) {
+  return (
+    <div className="filter-group">
+      <label>{label}</label>
+      <select value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value={all}>{allLabel || `All ${label.toLowerCase()}`}</option>
+        {options.map((o) => (<option key={o} value={o}>{o}</option>))}
+      </select>
+    </div>
+  );
+}
+
+export default function Filters({ filters, setFilter, setYearFilter, reset, options, show2021Fields }) {
   const yearPills = ['all', ...options.years];
 
   return (
@@ -192,7 +151,7 @@ export default function Filters({ filters, setFilter, reset, options }) {
             <button
               key={y}
               className={`year-pill ${filters.year === y ? 'active' : ''}`}
-              onClick={() => setFilter('year', y)}
+              onClick={() => setYearFilter(y)}
             >
               {y === 'all' ? 'All' : y}
             </button>
@@ -204,31 +163,28 @@ export default function Filters({ filters, setFilter, reset, options }) {
         <label>Show on map</label>
         <div className="show-on-map">
           <label className="checkbox-row">
-            <input
-              type="checkbox"
-              checked={filters.showAll}
-              onChange={(e) => setFilter('showAll', e.target.checked)}
-            />
+            <input type="checkbox" checked={filters.showAll}
+              onChange={(e) => setFilter('showAll', e.target.checked)} />
             <span className="dot" style={{ background: '#2563eb' }} />
             <span>All traffic accidents</span>
           </label>
           <label className="checkbox-row">
-            <input
-              type="checkbox"
-              checked={filters.showFatal}
-              onChange={(e) => setFilter('showFatal', e.target.checked)}
-            />
+            <input type="checkbox" checked={filters.showFatal}
+              onChange={(e) => setFilter('showFatal', e.target.checked)} />
             <span className="dot" style={{ background: '#dc2626' }} />
             <span>Fatal accidents</span>
           </label>
           <label className="checkbox-row">
-            <input
-              type="checkbox"
-              checked={filters.showInjured}
-              onChange={(e) => setFilter('showInjured', e.target.checked)}
-            />
+            <input type="checkbox" checked={filters.showInjured}
+              onChange={(e) => setFilter('showInjured', e.target.checked)} />
             <span className="dot" style={{ background: '#f59e0b' }} />
             <span>Injuries</span>
+          </label>
+          <label className="checkbox-row">
+            <input type="checkbox" checked={filters.showVehicleDamage}
+              onChange={(e) => setFilter('showVehicleDamage', e.target.checked)} />
+            <span className="dot" style={{ background: '#64748b' }} />
+            <span>Vehicle damage only</span>
           </label>
         </div>
       </div>
@@ -242,87 +198,116 @@ export default function Filters({ filters, setFilter, reset, options }) {
         </label>
         <TimeRangeSlider
           value={[filters.timeStart, filters.timeEnd]}
-          onChange={([s, e]) => {
-            setFilter('timeStart', s);
-            setFilter('timeEnd', e);
-          }}
+          onChange={([s, e]) => { setFilter('timeStart', s); setFilter('timeEnd', e); }}
         />
       </div>
 
-      <div className="filter-group">
-        <label>Accident type</label>
-        <select
-          value={filters.accidentType}
-          onChange={(e) => setFilter('accidentType', e.target.value)}
-        >
-          <option value="all">All types</option>
-          {options.accidentTypes.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </select>
-      </div>
+      <SelectFilter
+        label="Accident type"
+        value={filters.accidentType}
+        onChange={(v) => setFilter('accidentType', v)}
+        allLabel="All types"
+        options={options.accidentTypes}
+      />
 
-      <div className="filter-group">
-        <label>Cause of accident</label>
-        <select
-          value={filters.cause}
-          onChange={(e) => setFilter('cause', e.target.value)}
-        >
-          <option value="all">All causes</option>
-          {options.causes.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
-      </div>
+      <SelectFilter
+        label="Cause of accident"
+        value={filters.cause}
+        onChange={(v) => setFilter('cause', v)}
+        allLabel="All causes"
+        options={options.causes}
+      />
 
-      <div className="filter-group">
-        <label>Division</label>
-        <select
-          value={filters.division}
-          onChange={(e) => setFilter('division', e.target.value)}
-        >
-          <option value="all">All divisions</option>
-          {options.divisions.map((d) => (
-            <option key={d} value={d}>
-              {d}
-            </option>
-          ))}
-        </select>
-      </div>
+      <SelectFilter
+        label="Accident spot"
+        value={filters.accidentSpot}
+        onChange={(v) => setFilter('accidentSpot', v)}
+        allLabel="All spots"
+        options={options.accidentSpots}
+      />
 
-      <div className="filter-group">
-        <label>District</label>
-        <select
-          value={filters.dzongkhag}
-          onChange={(e) => setFilter('dzongkhag', e.target.value)}
-        >
-          <option value="all">All districts</option>
-          {options.dzongkhags.map((d) => (
-            <option key={d} value={d}>
-              {d}
-            </option>
-          ))}
-        </select>
-      </div>
+      <SelectFilter
+        label="Vehicle type"
+        value={filters.vehicleType}
+        onChange={(v) => setFilter('vehicleType', v)}
+        allLabel="All vehicles"
+        options={options.vehicleTypes}
+      />
 
-      <div className="filter-group">
-        <label>Gewog</label>
-        <select
-          value={filters.gewog}
-          onChange={(e) => setFilter('gewog', e.target.value)}
-        >
-          <option value="all">All gewogs</option>
-          {options.gewogs.map((g) => (
-            <option key={g} value={g}>
-              {g}
-            </option>
-          ))}
-        </select>
-      </div>
+      <SelectFilter
+        label="Status of victim"
+        value={filters.statusOfVictim}
+        onChange={(v) => setFilter('statusOfVictim', v)}
+        allLabel="All statuses"
+        options={options.statusesOfVictim}
+      />
+
+      <SelectFilter
+        label="Type of victim"
+        value={filters.typeOfVictim}
+        onChange={(v) => setFilter('typeOfVictim', v)}
+        allLabel="All victim types"
+        options={options.typesOfVictim}
+      />
+
+      {/* 2021-only filters — collapse silently for other years */}
+      {show2021Fields && (
+        <>
+          <div className="filter-section-divider">
+            <span>2021 only</span>
+          </div>
+
+          <SelectFilter
+            label="Road condition"
+            value={filters.roadCondition}
+            onChange={(v) => setFilter('roadCondition', v)}
+            allLabel="Any road condition"
+            options={options.roadConditions}
+          />
+
+          <SelectFilter
+            label="Weather"
+            value={filters.weather}
+            onChange={(v) => setFilter('weather', v)}
+            allLabel="Any weather"
+            options={options.weathers}
+          />
+
+          <SelectFilter
+            label="Mechanical failure"
+            value={filters.mechanicalFailure}
+            onChange={(v) => setFilter('mechanicalFailure', v)}
+            allLabel="Any mechanical failure"
+            options={options.mechanicalFailures}
+          />
+
+          <div className="filter-section-divider" />
+        </>
+      )}
+
+      <SelectFilter
+        label="Division"
+        value={filters.division}
+        onChange={(v) => setFilter('division', v)}
+        allLabel="All divisions"
+        options={options.divisions}
+      />
+
+      <SelectFilter
+        label="District"
+        value={filters.dzongkhag}
+        onChange={(v) => setFilter('dzongkhag', v)}
+        allLabel="All districts"
+        options={options.dzongkhags}
+      />
+
+      <SelectFilter
+        label="Gewog"
+        value={filters.gewog}
+        onChange={(v) => setFilter('gewog', v)}
+        allLabel="All gewogs"
+        options={options.gewogs}
+      />
 
       <div className="filter-group">
         <label>Place of occurrence</label>

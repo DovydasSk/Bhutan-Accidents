@@ -81,7 +81,12 @@ export default function AccidentCharts({ data }) {
     const acc = {};
     for (const a of data) {
       if (!a.accident_type) continue;
-      acc[a.accident_type] = (acc[a.accident_type] || 0) + 1;
+      // Tokenize multi-valued accident_type ("Off-road, Hit and Run") so each
+      // sub-type gets its own bar instead of a combined label that nobody clicks.
+      const tokens = String(a.accident_type).split(',').map((s) => s.trim()).filter(Boolean);
+      for (const tok of tokens) {
+        acc[tok] = (acc[tok] || 0) + 1;
+      }
     }
     return Object.entries(acc)
       .map(([type, count]) => ({ type, count }))

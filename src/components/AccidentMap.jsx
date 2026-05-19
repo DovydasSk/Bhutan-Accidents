@@ -87,7 +87,8 @@ export default function AccidentMap({ data }) {
           {points.map((a) => {
             const fatal = (a.deaths || 0) > 0;
             const injured = !fatal && (a.injured || 0) > 0;
-            const color = fatal ? '#dc2626' : injured ? '#f59e0b' : '#2563eb';
+            // fatal=red, injured=orange, damage-only=slate-gray (was blue; gray reads better as "no casualties")
+            const color = fatal ? '#dc2626' : injured ? '#f59e0b' : '#64748b';
             const radius = fatal ? 7 : injured ? 5 : 4;
             return (
               <CircleMarker
@@ -160,6 +161,18 @@ export default function AccidentMap({ data }) {
                         <span className="value">{a.accident_spot}</span>
                       </div>
                     )}
+                    {a.status_of_victim && (
+                      <div className="popup-row">
+                        <span className="label">Status</span>
+                        <span className="value">{a.status_of_victim}</span>
+                      </div>
+                    )}
+                    {Array.isArray(a.type_of_victim) && a.type_of_victim.length > 0 && (
+                      <div className="popup-row">
+                        <span className="label">Victim type</span>
+                        <span className="value">{a.type_of_victim.join(', ')}</span>
+                      </div>
+                    )}
                   </div>
                 </Popup>
               </CircleMarker>
@@ -194,8 +207,8 @@ export default function AccidentMap({ data }) {
           Injuries
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#2563eb', display: 'inline-block', border: '1.5px solid white', boxShadow: '0 0 0 1px #2563eb' }} />
-          No casualties
+          <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#64748b', display: 'inline-block', border: '1.5px solid white', boxShadow: '0 0 0 1px #64748b' }} />
+          Vehicle damage
         </div>
       </div>
 

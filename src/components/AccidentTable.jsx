@@ -65,6 +65,7 @@ export default function AccidentTable({ data }) {
                 Date{sortArrow('date')}
               </th>
               <th>Type</th>
+              <th>Cause</th>
               <th>Location / Place</th>
               <th>District</th>
               <th>Division</th>
@@ -82,6 +83,7 @@ export default function AccidentTable({ data }) {
               <tr key={a.id}>
                 <td style={{ whiteSpace: 'nowrap' }}>{formatDate(a.date)}</td>
                 <td>{a.accident_type || '—'}</td>
+                <td style={{ maxWidth: 220 }}>{a.cause || '—'}</td>
                 <td>{a.location || a.place || '—'}</td>
                 <td>{a.dzongkhag || '—'}</td>
                 <td>{a.division || '—'}</td>

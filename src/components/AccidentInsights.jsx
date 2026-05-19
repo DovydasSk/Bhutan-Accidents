@@ -95,12 +95,19 @@ export default function AccidentInsights({ data }) {
       }
 
       if (a.cause) {
-        if (!byCause[a.cause]) byCause[a.cause] = { count: 0, deaths: 0 };
-        byCause[a.cause].count++;
-        byCause[a.cause].deaths += deaths;
-        if (/drunk/i.test(a.cause)) {
+        // Tokenize: "Drunk driving, Tailgating" counts toward BOTH causes.
+        const causeTokens = String(a.cause).split(',').map((s) => s.trim()).filter(Boolean);
+        let countedDrunk = false;
+        for (const tok of causeTokens) {
+          if (!byCause[tok]) byCause[tok] = { count: 0, deaths: 0 };
+          byCause[tok].count++;
+          byCause[tok].deaths += deaths;
+        }
+        // Count this ACCIDENT (not each token) once toward drunk-related stats
+        if (causeTokens.some((t) => /drunk/i.test(t)) && !countedDrunk) {
           drunkRelated.count++;
           drunkRelated.deaths += deaths;
+          countedDrunk = true;
         }
       }
       if (a.vehicle_type) byVehicle[a.vehicle_type] = (byVehicle[a.vehicle_type] || 0) + 1;

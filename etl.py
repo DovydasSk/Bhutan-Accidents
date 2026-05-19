@@ -3,8 +3,11 @@ ETL: Normalize Bhutan accident data from heterogeneous Excel files into a single
 
 Two data sources:
 1. MVA_2022-2025.xlsx -> sheets per year (2022, 2023, 2024, 2025). Has coordinates.
-2. Divison_*.xlsx + Traffic_Division.xlsx -> 2021 data per division. NO coordinates,
-   uses "Place of Occurrence" string and categorical flag columns.
+   Per-row schema: one row per VICTIM, aggregated into accidents by Sl.No.
+2. Divison_*.xlsx + Traffic_Division.xlsx -> 2021 data per division. NO coordinates.
+   Wide schema with check-mark columns for accident type, cause, road condition,
+   weather, and mechanical failure. Columns vary slightly per sheet (63–66 cols,
+   some include "Sleep driving" some don't), so we extract by HEADER NAME not index.
 
 Output: public/data/accidents.json with a unified schema.
 """
@@ -19,11 +22,11 @@ import pandas as pd
 from shapely.geometry import Polygon, Point
 
 UPLOADS = Path('/mnt/user-data/uploads')
-OUT = Path('/home/claude/bhutan-accidents/public/data/accidents.json')
+# Output goes next to the script (Vite serves from ./public/data)
+SCRIPT_DIR = Path(__file__).resolve().parent
+OUT = SCRIPT_DIR / 'public' / 'data' / 'accidents.json'
 
 # ---------- Bhutan boundary polygon (hand-coded approximation) ----------
-# Used to filter out records with bogus coordinates (data entry errors that
-# put accidents outside the country).
 BHUTAN_POLYGON_COORDS = [
     [88.75, 27.32], [88.80, 27.85], [89.10, 28.05], [89.35, 28.18],
     [89.50, 28.32], [90.00, 28.27], [90.45, 28.30], [90.85, 28.10],
@@ -38,8 +41,8 @@ BHUTAN_POLY = Polygon(BHUTAN_POLYGON_COORDS)
 
 
 def write_geojson():
-    """Write the Bhutan boundary polygon as GeoJSON for the frontend map."""
-    out = Path('/home/claude/bhutan-accidents/public/data/bhutan.geojson')
+    out = SCRIPT_DIR / 'public' / 'data' / 'bhutan.geojson'
+    out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps({
         "type": "FeatureCollection",
         "features": [{
@@ -50,11 +53,7 @@ def write_geojson():
     }))
 
 
-# ---------- Canonical Division and Dzongkhag (Region) names ----------
-# The Royal Bhutan Police uses 15 divisions. MVA data labels them with named
-# Roman numerals (e.g. "Division I Paro"), the 2021 division files just say
-# "Division 1". Both refer to the same physical division. Map all to a single
-# canonical name so the filter dropdown is clean.
+# ---------- Canonical Division and District names ----------
 DIVISION_MAP = {
     'Division 1': 'Division I — Paro',
     'Division I Paro': 'Division I — Paro',
@@ -85,55 +84,23 @@ DIVISION_MAP = {
     'Traffic Division': 'Traffic Division (Thimphu)',
 }
 
-
-# Map sheet names in division files (often police-station/dungkhag names) to
-# canonical dzongkhags (Bhutan's 20 official districts).
 DZONGKHAG_MAP = {
-    # Variants of canonical dzongkhag names
-    'Bumthang': 'Bumthang',
-    'Chukha': 'Chukha',
-    'Dagana': 'Dagana',
-    'Gasa': 'Gasa',
-    'Haa': 'Haa',
-    'Lhuentse': 'Lhuentse',
-    'Lhuntse': 'Lhuentse',
-    'Mongar': 'Mongar',
-    'Paro': 'Paro',
-    'Pemagatshel': 'Pemagatshel',
-    'P,gatshel': 'Pemagatshel',
-    'Punakha': 'Punakha',
-    'Samdrup Jongkhar': 'Samdrup Jongkhar',
-    'S.jongkhar': 'Samdrup Jongkhar',
-    'Samtse': 'Samtse',
-    'Sarpang': 'Sarpang',
-    'Thimphu': 'Thimphu',
-    'Trashigang': 'Trashigang',
-    'Trashiyangtse': 'Trashiyangtse',
-    'Trongsa': 'Trongsa',
-    'Tsirang': 'Tsirang',
-    'Wangduephodrang': 'Wangdue Phodrang',
-    'Wangdue': 'Wangdue Phodrang',
-    'Zhemgang': 'Zhemgang',
-    # Sub-district / police-station sheet names mapped up to their dzongkhag
-    'Phuntsholing': 'Chukha',
-    'Gedu': 'Chukha',
-    'Tsimasham': 'Chukha',
-    'Pasakha': 'Chukha',
-    'Gelephu': 'Sarpang',
-    'Panbang': 'Zhemgang',
-    'Gyelposhing': 'Mongar',
-    'Weringla': 'Mongar',
-    'Dorokha. D.chen': 'Samtse',
-    'Norbugang.Chmari': 'Samtse',
-    'Tashicholing.sibsoo': 'Samtse',
-    'Pendeling': 'Samtse',
-    'Pendeling ': 'Samtse',
+    'Bumthang': 'Bumthang', 'Chukha': 'Chukha', 'Dagana': 'Dagana', 'Gasa': 'Gasa',
+    'Haa': 'Haa', 'Lhuentse': 'Lhuentse', 'Lhuntse': 'Lhuentse', 'Mongar': 'Mongar',
+    'Paro': 'Paro', 'Pemagatshel': 'Pemagatshel', 'P,gatshel': 'Pemagatshel',
+    'Punakha': 'Punakha', 'Samdrup Jongkhar': 'Samdrup Jongkhar',
+    'S.jongkhar': 'Samdrup Jongkhar', 'Samtse': 'Samtse', 'Sarpang': 'Sarpang',
+    'Thimphu': 'Thimphu', 'Trashigang': 'Trashigang', 'Trashiyangtse': 'Trashiyangtse',
+    'Trongsa': 'Trongsa', 'Tsirang': 'Tsirang', 'Wangduephodrang': 'Wangdue Phodrang',
+    'Wangdue': 'Wangdue Phodrang', 'Zhemgang': 'Zhemgang',
+    'Phuntsholing': 'Chukha', 'Gedu': 'Chukha', 'Tsimasham': 'Chukha', 'Pasakha': 'Chukha',
+    'Gelephu': 'Sarpang', 'Panbang': 'Zhemgang',
+    'Gyelposhing': 'Mongar', 'Weringla': 'Mongar',
+    'Dorokha. D.chen': 'Samtse', 'Norbugang.Chmari': 'Samtse',
+    'Tashicholing.sibsoo': 'Samtse', 'Pendeling': 'Samtse', 'Pendeling ': 'Samtse',
     'L.zingkha': 'Dagana',
-    'Wamrong': 'Trashigang',
-    'Saktang': 'Trashigang',
-    'Thimshing': 'Trashigang',
-    'Samdrupcholing': 'Samdrup Jongkhar',
-    'Jomotsangkha': 'Samdrup Jongkhar',
+    'Wamrong': 'Trashigang', 'Saktang': 'Trashigang', 'Thimshing': 'Trashigang',
+    'Samdrupcholing': 'Samdrup Jongkhar', 'Jomotsangkha': 'Samdrup Jongkhar',
     'Nganglam': 'Pemagatshel',
     'Zawakha': 'Wangdue Phodrang',
 }
@@ -154,7 +121,6 @@ def canonical_dzongkhag(name):
 # ---------- helpers ----------
 
 def parse_date(val):
-    """Return ISO date string YYYY-MM-DD or None."""
     if val is None or (isinstance(val, float) and pd.isna(val)):
         return None
     if isinstance(val, datetime):
@@ -164,7 +130,6 @@ def parse_date(val):
     s = str(val).strip()
     if not s or s.lower() == 'nan':
         return None
-    # Try common formats
     for fmt in ('%d-%m-%Y', '%d/%m/%Y', '%Y-%m-%d', '%Y-%m-%d %H:%M:%S', '%d-%m-%y'):
         try:
             return datetime.strptime(s.split(' ')[0], fmt).strftime('%Y-%m-%d')
@@ -174,16 +139,21 @@ def parse_date(val):
 
 
 def parse_time(val):
+    """Parse e.g. '2030 hrs' / '1336hrs' / '930 hrs' -> 'HH:MM'."""
     if val is None or (isinstance(val, float) and pd.isna(val)):
         return None
     s = str(val).strip()
     if not s or s.lower() == 'nan':
         return None
-    # e.g. "2030 hrs." or "1336 hrs" or "1030 hrs"
     m = re.search(r'(\d{3,4})', s)
     if m:
         t = m.group(1).zfill(4)
-        return f'{t[:2]}:{t[2:]}'
+        hh, mm = t[:2], t[2:]
+        try:
+            if 0 <= int(hh) <= 23 and 0 <= int(mm) <= 59:
+                return f'{hh}:{mm}'
+        except ValueError:
+            return None
     return None
 
 
@@ -191,8 +161,7 @@ def to_float(v):
     try:
         if v is None or pd.isna(v):
             return None
-        f = float(v)
-        return f
+        return float(v)
     except (ValueError, TypeError):
         return None
 
@@ -215,18 +184,39 @@ def clean_str(v):
     return s
 
 
+def is_marked(v):
+    """A checkbox column is 'marked' if the cell has any truthy / non-empty value.
+    Excel files use 1, 'yes', '1', occasionally 'x'."""
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        return False
+    s = str(v).strip().lower()
+    if not s or s == 'nan':
+        return False
+    try:
+        return float(s) > 0
+    except (ValueError, TypeError):
+        return s in ('yes', 'y', 'x', '✓', 'true')
+
+
 # ---------- MVA 2022-2025 (clean, geocoded) ----------
 
+# Canonical "Status of Victim" values: only 'Death', 'Injured' present in MVA.
+# A blank Status of Victim with no death/injured victim entries == "Vehicle damage only".
+def victim_status_label(deaths, injured):
+    if deaths > 0:
+        return 'Death'
+    if injured > 0:
+        return 'Injured'
+    return 'Vehicle damage only'
+
+
 def process_mva():
-    """Process MVA_2022-2025 file. Each row = one victim entry; we aggregate by Sl.No within year+division."""
     rows = []
     file = UPLOADS / 'MVA_2022-2025.xlsx'
     for year in ['2022', '2023', '2024', '2025']:
         df = pd.read_excel(file, sheet_name=year, header=1)
-        # group consecutive rows with same Sl.No into a single accident
-        # but Sl.No may repeat for multiple victims per accident. Use forward-fill on Sl.No.
         df['Sl.No.'] = df['Sl.No.'].ffill()
-        # Forward fill the accident-level fields (the spreadsheet leaves them blank for additional victims)
+        # Forward-fill accident-level fields (blank for additional victim rows)
         accident_cols = ['Division', 'Dzongkhag', 'Gewog', 'Location', 'Latitude', 'Longitude',
                          'Date of Occurance', 'Time of Occurance', 'Accident Type',
                          'Cause of Accident', 'Accident spot', 'Vehicle Type', 'Vehicle No.']
@@ -234,17 +224,21 @@ def process_mva():
             if c in df.columns:
                 df[c] = df[c].ffill()
 
-        # Group by Sl.No.
         for sl_no, group in df.groupby('Sl.No.'):
             first = group.iloc[0]
-            victims = group[['Status of Victim', 'Type of victim']].dropna(how='all')
-            deaths = int((victims['Status of Victim'].astype(str).str.lower() == 'death').sum())
-            injured = int((victims['Status of Victim'].astype(str).str.lower() == 'injured').sum())
+            victims = group[['Status of Victim', 'Type of victim']].copy()
+            statuses = victims['Status of Victim'].astype(str).str.strip().str.lower()
+            deaths = int((statuses == 'death').sum())
+            injured = int((statuses == 'injured').sum())
+
+            # Collect distinct victim types reported for this accident
+            victim_types = sorted({
+                str(t).strip() for t in victims['Type of victim'].dropna()
+                if str(t).strip() and str(t).strip().lower() != 'nan'
+            })
 
             lat = to_float(first.get('Latitude'))
             lon = to_float(first.get('Longitude'))
-
-            # Filter out coordinates outside Bhutan (data entry errors)
             if lat is not None and lon is not None:
                 if not BHUTAN_POLY.contains(Point(lon, lat)):
                     lat = None
@@ -269,49 +263,129 @@ def process_mva():
                 'vehicle_no': clean_str(first.get('Vehicle No.')),
                 'deaths': deaths,
                 'injured': injured,
-                'place': clean_str(first.get('Location')),  # unified location filter
+                'place': clean_str(first.get('Location')),
+                'status_of_victim': victim_status_label(deaths, injured),
+                'type_of_victim': victim_types,
+                # MVA file doesn't capture these
+                'road_condition': None,
+                'weather': None,
+                'mechanical_failure': None,
             })
     return rows
 
 
 # ---------- Division files (2021, no coords) ----------
 
-# Column indices in division layout (header in row 0):
-# 0: Name of P.S., 1: Month, 2: Case No, 3: Despetch No, 4: Place of Occurrence,
-# 5: DTR (date of report), 6: Time, 7: DTO (date of occurrence), 8: Time,
-# 9: Off-road/Self, 10: Collision, 11: Hit and Run, 12: Pedestrian, 13: Fatal,
-# 14: Driver's name, ... 22: No. of Death, 23: No of Injured
+# Map of "raw column header label" -> canonical category value.
+# Header labels are lowercased & whitespace-collapsed before lookup,
+# so "brake Failure " and "Streeing Failure" still match.
+def _norm(label):
+    return re.sub(r'\s+', ' ', str(label)).strip().lower()
 
-ACCIDENT_TYPE_COLS = {
-    9: 'Off-road / Self',
-    10: 'Collision',
-    11: 'Hit and Run',
-    12: 'Pedestrian',
-    13: 'Fatal',
+
+# Accident type columns (J–N in the spec). Marked column -> type.
+ACCIDENT_TYPE_FROM_COL = {
+    'off-road/ self': 'Others',                # spec: "Others" with cause "Off-road/Self"
+    'collision': 'Two Vehicle collision',      # spec: "new accident type for collisions" — reuse MVA's "Two Vehicle collision" label
+    'hit amd run': 'Hit and Run',
+    'pedestrian': 'Vehicle pedestrian collision',
+    'fatal': 'Others',                          # "type Others, but counted as having fatalities"
 }
 
+# Causes — column header -> canonical cause string. Multiple columns may
+# be marked; we join them with ', '. Names use the MVA file's casing so
+# the dropdown stays clean.
+CAUSE_FROM_COL = {
+    'using cell phone': 'Using cell phone',
+    'reaching for object in the vehicle': 'Reaching for object in the vehicle',
+    'speeding': 'Over speeding',                # match MVA
+    'drink driving': 'Drunk driving',           # match MVA
+    'tailgating': 'Tailgating',
+    'not keeping left': 'Not keeping left',
+    'not giving right of way': 'Not giving right of way',
+    'un safe over taking': 'Unsafe overtaking',
+    'unlicensed driving': 'Unlicensed driving',
+    'reversing when unsafe': 'Reverse when unsafe',
+    'unsafe u turn': 'Unsafe U-turn',
+    'not having proper control': 'Not having proper control over the Vehicle',
+    'not following general duty of driver': 'Not following general duty of driver',
+    'sleep driving': 'Sleep-deprived driving',
+    'ove loading': 'Overloading',
+    # "Others" col in the cause block is handled specially (it's one of several "Others")
+}
+
+ROAD_CONDITION_FROM_COL = {
+    'pothholes': 'Potholes',
+    'icy or snowiy road': 'Icy or snowy road',
+    'sinking road': 'Sinking road',
+    'landslide': 'Landslide',
+    'improper conning off of construction zones': 'Improper coning off construction zones',
+    'falling boulders/pibbles': 'Falling boulders/pebbles',
+}
+
+WEATHER_FROM_COL = {
+    'rain': 'Rain',
+    'fog': 'Fog',
+    'snow': 'Snow',
+    'hail stone': 'Hail',
+    'windy': 'Windy',
+}
+
+MECHANICAL_FROM_COL = {
+    'brake failure': 'Brake failure',
+    'tyre wheel failure': 'Tyre/wheel failure',
+    'streeing failure': 'Steering failure',
+    'light failure': 'Light failure',
+}
+
+
+def _resolve_block_others(headers):
+    """
+    The division sheets have FOUR identical 'Others' columns sitting at the
+    end of the Cause, Road Condition, Weather and Mechanical Failure blocks.
+    We need to know which 'Others' belongs to which block. Resolve by scanning
+    the header row and tagging each 'others' occurrence by its position
+    relative to the surrounding marker columns.
+
+    Returns a dict {col_idx -> block_name} for the four 'Others' columns.
+    """
+    n = len(headers)
+    # Anchors that mark the END of each known block, in order:
+    cause_end = None
+    road_end = None
+    weather_end = None
+    mech_end = None
+    for i, h in enumerate(headers):
+        nh = _norm(h)
+        if nh == 'ove loading':
+            cause_end = i
+        elif nh == 'falling boulders/pibbles':
+            road_end = i
+        elif nh == 'windy':
+            weather_end = i
+        elif nh == 'light failure':
+            mech_end = i
+
+    # An 'Others' column at index i belongs to the block whose end is the
+    # largest end-index < i.
+    others_map = {}
+    for i, h in enumerate(headers):
+        if _norm(h) == 'others':
+            # decide block
+            if cause_end is not None and i == cause_end + 1:
+                others_map[i] = 'cause'
+            elif road_end is not None and i == road_end + 1:
+                others_map[i] = 'road'
+            elif weather_end is not None and i == weather_end + 1:
+                others_map[i] = 'weather'
+            elif mech_end is not None and i == mech_end + 1:
+                others_map[i] = 'mechanical'
+    return others_map
+
+
 def process_divisions():
-    """
-    Layout per sheet:
-      - 1-2 top rows hold groupings (mostly empty, with occasional merged labels like 'Human Error')
-      - The header row contains 'Case No' in col 2, 'Place of Occurrence' in col 4, etc.
-      - Data starts on the next row.
-      - Multi-row accidents: accident-level fields appear only on the first row of a case;
-        subsequent rows are extra victims/drivers for the SAME case (NaN in case_no column).
-    """
     rows = []
     division_files = sorted(UPLOADS.glob('Divison_*.xlsx')) + [UPLOADS / 'Traffic_Division.xlsx']
-
-    # Column indices (constant across division files)
-    COL_PS = 0
-    COL_CASE = 2
-    COL_PLACE = 4
-    COL_DTO = 7
-    COL_TIME_OCC = 8
-    COL_VEH_NO = 20
-    COL_VEH_TYPE = 21
-    COL_DEATH = 22
-    COL_INJURED = 23
 
     for f in division_files:
         if not f.exists():
@@ -327,21 +401,51 @@ def process_divisions():
             if len(raw) < 2:
                 continue
 
-            # Find header row: scan first 4 rows for one containing 'Case No' in col 2
+            # Find the header row (one containing 'Case No' somewhere)
             header_row = None
             for i in range(min(4, len(raw))):
-                v = raw.iloc[i, COL_CASE] if COL_CASE < raw.shape[1] else None
-                if isinstance(v, str) and 'case no' in v.lower():
+                row = raw.iloc[i].astype(str).str.lower()
+                if any('case no' in v for v in row if isinstance(v, str)):
                     header_row = i
                     break
             if header_row is None:
+                continue
+
+            headers = list(raw.iloc[header_row])
+            normalized = [_norm(h) if pd.notna(h) else '' for h in headers]
+
+            # Build column-name -> col-index map (use first occurrence for non-'others' names)
+            col_idx = {}
+            for i, n in enumerate(normalized):
+                if n and n != 'others' and n not in col_idx:
+                    col_idx[n] = i
+            others_map = _resolve_block_others(headers)
+
+            def col(label):
+                """Find column index by normalized header label, return None if missing."""
+                return col_idx.get(_norm(label))
+
+            # Required columns (same name in every file)
+            ic_case = col('case no')
+            ic_place = col('place of occurrence')
+            ic_dto = col('dto')
+            ic_ps = col('name of p.s.')
+            ic_veh_no = col('vehicle no.')
+            ic_veh_type = col('type of vehicle')
+            ic_death = col('no. of death')
+            ic_injured = col('no of injured')
+            # There are TWO columns labeled 'Time' (DTR time and DTO time). The
+            # second occurrence is the time-of-occurrence we want.
+            time_indices = [i for i, n in enumerate(normalized) if n == 'time']
+            ic_time_occ = time_indices[1] if len(time_indices) >= 2 else None
+
+            if ic_case is None or ic_place is None:
                 continue
 
             data = raw.iloc[header_row + 1:].reset_index(drop=True).copy()
             if data.empty:
                 continue
 
-            # Helper: case_no as integer where present (NaN for continuation rows)
             def _to_case(v):
                 try:
                     if v is None or pd.isna(v):
@@ -350,65 +454,132 @@ def process_divisions():
                 except (ValueError, TypeError):
                     return None
 
-            data['_case'] = data[COL_CASE].map(_to_case)
-            # Forward-fill the case marker so continuation rows attach to their parent
+            data['_case'] = data[ic_case].map(_to_case)
             data['_case'] = data['_case'].ffill()
-            # Drop any rows before the first real case (e.g. blank header padding)
             data = data[data['_case'].notna()]
             if data.empty:
                 continue
 
             for case_no, group in data.groupby('_case'):
                 first = group.iloc[0]
-                place = clean_str(first.iloc[COL_PLACE])
-                dto = first.iloc[COL_DTO]
-                time = first.iloc[COL_TIME_OCC]
 
-                if place is None and (pd.isna(dto) or dto is None):
+                def cell(c):
+                    """Safe cell access — returns None for missing columns or out-of-range indices."""
+                    if c is None or c >= len(first):
+                        return None
+                    return first.iloc[c]
+
+                place = clean_str(cell(ic_place))
+                dto = cell(ic_dto)
+                if place is None and (dto is None or pd.isna(dto)):
                     continue
 
-                acc_types = []
-                for idx, label in ACCIDENT_TYPE_COLS.items():
-                    val = None
-                    for _, r in group.iterrows():
-                        v = r.iloc[idx] if idx < len(r) else None
-                        if v is not None and not pd.isna(v):
-                            val = v
-                            break
-                    if val is not None:
-                        try:
-                            if float(val) > 0:
-                                acc_types.append(label)
-                        except (ValueError, TypeError):
-                            acc_types.append(label)
-                accident_type = ', '.join(acc_types) if acc_types else None
+                # ----- Accident types from the 5 marker columns -----
+                acc_types = set()
+                has_fatal_marker = False
+                has_offroad_marker = False
+                for header_label, mapped_type in ACCIDENT_TYPE_FROM_COL.items():
+                    ci = col(header_label)
+                    if ci is None:
+                        continue
+                    # ANY row in the group having this marker counts
+                    marked = any(is_marked(r.iloc[ci]) for _, r in group.iterrows() if ci < len(r))
+                    if marked:
+                        acc_types.add(mapped_type)
+                        if header_label == 'fatal':
+                            has_fatal_marker = True
+                        if header_label == 'off-road/ self':
+                            has_offroad_marker = True
+                if not acc_types:
+                    acc_types.add('Others')
+                accident_type = ', '.join(sorted(acc_types))
 
+                # ----- Causes from the cause block -----
+                causes = set()
+                for header_label, canonical in CAUSE_FROM_COL.items():
+                    ci = col(header_label)
+                    if ci is None:
+                        continue
+                    if any(is_marked(r.iloc[ci]) for _, r in group.iterrows() if ci < len(r)):
+                        causes.add(canonical)
+                # Cause-block 'Others'
+                cause_others_col = next((i for i, b in others_map.items() if b == 'cause'), None)
+                if cause_others_col is not None:
+                    if any(is_marked(r.iloc[cause_others_col]) for _, r in group.iterrows() if cause_others_col < len(r)):
+                        causes.add('Others')
+                # Special: if Off-road/Self marker was set, spec says cause = 'Off-road/Self'
+                if has_offroad_marker:
+                    causes.add('Off-road/Self')
+
+                cause = ', '.join(sorted(causes)) if causes else None
+
+                # ----- Road condition / Weather / Mechanical -----
+                road_conditions = set()
+                for header_label, canonical in ROAD_CONDITION_FROM_COL.items():
+                    ci = col(header_label)
+                    if ci is None: continue
+                    if any(is_marked(r.iloc[ci]) for _, r in group.iterrows() if ci < len(r)):
+                        road_conditions.add(canonical)
+                road_others = next((i for i, b in others_map.items() if b == 'road'), None)
+                if road_others is not None and any(is_marked(r.iloc[road_others]) for _, r in group.iterrows() if road_others < len(r)):
+                    road_conditions.add('Others')
+
+                weather = set()
+                for header_label, canonical in WEATHER_FROM_COL.items():
+                    ci = col(header_label)
+                    if ci is None: continue
+                    if any(is_marked(r.iloc[ci]) for _, r in group.iterrows() if ci < len(r)):
+                        weather.add(canonical)
+                weather_others = next((i for i, b in others_map.items() if b == 'weather'), None)
+                if weather_others is not None and any(is_marked(r.iloc[weather_others]) for _, r in group.iterrows() if weather_others < len(r)):
+                    weather.add('Others')
+
+                mechanical = set()
+                for header_label, canonical in MECHANICAL_FROM_COL.items():
+                    ci = col(header_label)
+                    if ci is None: continue
+                    if any(is_marked(r.iloc[ci]) for _, r in group.iterrows() if ci < len(r)):
+                        mechanical.add(canonical)
+                mech_others = next((i for i, b in others_map.items() if b == 'mechanical'), None)
+                if mech_others is not None and any(is_marked(r.iloc[mech_others]) for _, r in group.iterrows() if mech_others < len(r)):
+                    mechanical.add('Others')
+
+                # ----- Deaths / injured -----
                 deaths = 0
                 injured = 0
-                for _, r in group.iterrows():
-                    deaths += to_int(r.iloc[COL_DEATH]) if COL_DEATH < len(r) else 0
-                    injured += to_int(r.iloc[COL_INJURED]) if COL_INJURED < len(r) else 0
+                if ic_death is not None:
+                    for _, r in group.iterrows():
+                        if ic_death < len(r):
+                            deaths += to_int(r.iloc[ic_death])
+                if ic_injured is not None:
+                    for _, r in group.iterrows():
+                        if ic_injured < len(r):
+                            injured += to_int(r.iloc[ic_injured])
+                # If "Fatal" marker is set but No. of Death is blank, assume at least 1 death
+                if has_fatal_marker and deaths == 0:
+                    deaths = 1
 
-                vehicle_type = clean_str(first.iloc[COL_VEH_TYPE]) if COL_VEH_TYPE < len(first) else None
-                vehicle_no = clean_str(first.iloc[COL_VEH_NO]) if COL_VEH_NO < len(first) else None
-                police_station = clean_str(first.iloc[COL_PS])
+                vehicle_type = clean_str(cell(ic_veh_type))
+                vehicle_no = clean_str(cell(ic_veh_no))
+                police_station = clean_str(cell(ic_ps))
 
+                # Time
+                time_val = cell(ic_time_occ) if ic_time_occ is not None else None
+                # Date
                 date = parse_date(dto)
-                year = None
+                year = 2021
                 if date:
                     try:
                         year = int(date[:4])
                     except ValueError:
                         pass
-                if year is None:
-                    year = 2021
 
                 rows.append({
                     'id': f'div-{f.stem}-{sheet}-{int(case_no)}',
                     'source': 'division',
                     'year': year,
                     'date': date,
-                    'time': parse_time(time),
+                    'time': parse_time(time_val),
                     'division': canonical_division(div_name),
                     'dzongkhag': canonical_dzongkhag(clean_str(sheet)),
                     'gewog': None,
@@ -416,8 +587,8 @@ def process_divisions():
                     'lat': None,
                     'lon': None,
                     'accident_type': accident_type,
-                    'cause': None,
-                    'accident_spot': None,
+                    'cause': cause,
+                    'accident_spot': None,            # not captured in 2021 sheets
                     'vehicle_type': vehicle_type,
                     'vehicle_no': vehicle_no,
                     'deaths': deaths,
@@ -425,6 +596,11 @@ def process_divisions():
                     'place': place,
                     'police_station': police_station,
                     'case_no': str(int(case_no)),
+                    'status_of_victim': victim_status_label(deaths, injured),
+                    'type_of_victim': [],            # not captured in 2021 sheets
+                    'road_condition': ', '.join(sorted(road_conditions)) if road_conditions else None,
+                    'weather': ', '.join(sorted(weather)) if weather else None,
+                    'mechanical_failure': ', '.join(sorted(mechanical)) if mechanical else None,
                 })
     return rows
 
@@ -440,7 +616,6 @@ def main():
     print(f'Total accidents: {len(all_rows)} (MVA: {len(mva)}, Division: {len(div)})')
     print(f'Wrote: {OUT} ({OUT.stat().st_size / 1024:.1f} KB)')
 
-    # Quick stats
     by_year = {}
     geocoded = 0
     for r in all_rows:
@@ -448,15 +623,25 @@ def main():
         if r['lat'] and r['lon']:
             geocoded += 1
     print('By year:', sorted(by_year.items()))
-    print(f'Geocoded (after Bhutan boundary filter): {geocoded}')
+    print(f'Geocoded: {geocoded}')
 
+    # Stats for verification
     from collections import Counter
-    print('\nDivisions in output:')
-    for d, n in sorted(Counter(r['division'] for r in all_rows if r['division']).items()):
-        print(f'  {d}: {n}')
-    print('\nRegions (Dzongkhags) in output:')
-    for d, n in sorted(Counter(r['dzongkhag'] for r in all_rows if r['dzongkhag']).items()):
-        print(f'  {d}: {n}')
+    print('\nStatus of Victim:')
+    for v, n in Counter(r['status_of_victim'] for r in all_rows).most_common():
+        print(f'  {v}: {n}')
+
+    print('\nRoad conditions (2021 only):')
+    for v, n in Counter(r['road_condition'] for r in all_rows if r['road_condition']).most_common(15):
+        print(f'  {v}: {n}')
+
+    print('\nWeather (2021 only):')
+    for v, n in Counter(r['weather'] for r in all_rows if r['weather']).most_common(15):
+        print(f'  {v}: {n}')
+
+    print('\nMechanical failure (2021 only):')
+    for v, n in Counter(r['mechanical_failure'] for r in all_rows if r['mechanical_failure']).most_common(15):
+        print(f'  {v}: {n}')
 
 
 if __name__ == '__main__':
