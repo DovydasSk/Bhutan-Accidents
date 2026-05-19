@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { MapContainer, GeoJSON, CircleMarker, Popup, Pane } from 'react-leaflet';
+import { MapContainer, TileLayer, GeoJSON, CircleMarker, Popup, Pane } from 'react-leaflet';
 import L from 'leaflet';
 
-// Bhutan bounding box - constrain the map so the user can't pan to other countries
+// Bhutan bounding box — constrain the map so the user can't pan to other countries
 const BHUTAN_BOUNDS = L.latLngBounds(
   L.latLng(26.6, 88.6),   // SW corner
   L.latLng(28.4, 92.2)    // NE corner
@@ -52,22 +52,33 @@ export default function AccidentMap({ data }) {
           maxBounds={BHUTAN_BOUNDS}
           maxBoundsViscosity={1.0}
           minZoom={7}
-          maxZoom={14}
+          maxZoom={17}
           style={{ height: '100%', width: '100%', background: '#eef2f6' }}
           scrollWheelZoom={true}
           zoomControl={true}
-          attributionControl={false}
+          attributionControl={true}
         >
-          {/* Bhutan boundary - filled, on its own pane below markers */}
+          {/* Base map: OpenStreetMap — shows roads, towns, terrain labels.
+              No API key required. */}
+          <Pane name="tile-pane" style={{ zIndex: 200 }}>
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              maxZoom={19}
+            />
+          </Pane>
+
+          {/* Bhutan boundary on top of tiles — outline only so roads remain visible */}
           <Pane name="bhutan-pane" style={{ zIndex: 300 }}>
             {boundary && (
               <GeoJSON
                 data={boundary}
                 style={{
-                  color: '#94a3b8',
-                  weight: 1.5,
-                  fillColor: '#ffffff',
-                  fillOpacity: 1,
+                  color: '#1a2332',
+                  weight: 2,
+                  fillColor: '#000000',
+                  fillOpacity: 0,        // transparent fill so OSM tiles show through
+                  opacity: 0.7,
                 }}
               />
             )}
@@ -84,9 +95,9 @@ export default function AccidentMap({ data }) {
                 center={[a.lat, a.lon]}
                 radius={radius}
                 pathOptions={{
-                  color: color,
+                  color: '#ffffff',
                   fillColor: color,
-                  fillOpacity: 0.75,
+                  fillOpacity: 0.9,
                   weight: 1.5,
                 }}
               >
@@ -104,9 +115,15 @@ export default function AccidentMap({ data }) {
                       <span className="value">{a.location || a.place || '—'}</span>
                     </div>
                     <div className="popup-row">
-                      <span className="label">Region</span>
+                      <span className="label">District</span>
                       <span className="value">{a.dzongkhag || '—'}</span>
                     </div>
+                    {a.gewog && (
+                      <div className="popup-row">
+                        <span className="label">Gewog</span>
+                        <span className="value">{a.gewog}</span>
+                      </div>
+                    )}
                     <div className="popup-row">
                       <span className="label">Division</span>
                       <span className="value">{a.division || '—'}</span>
@@ -169,15 +186,15 @@ export default function AccidentMap({ data }) {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#dc2626', display: 'inline-block' }} />
+          <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#dc2626', display: 'inline-block', border: '1.5px solid white', boxShadow: '0 0 0 1px #dc2626' }} />
           Fatal
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} />
+          <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#f59e0b', display: 'inline-block', border: '1.5px solid white', boxShadow: '0 0 0 1px #f59e0b' }} />
           Injuries
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#2563eb', display: 'inline-block' }} />
+          <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#2563eb', display: 'inline-block', border: '1.5px solid white', boxShadow: '0 0 0 1px #2563eb' }} />
           No casualties
         </div>
       </div>

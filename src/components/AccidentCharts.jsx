@@ -2,17 +2,65 @@ import { useMemo } from 'react';
 import {
   BarChart,
   Bar,
-  LineChart,
-  Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
   Cell,
+  LabelList,
 } from 'recharts';
 
-const COLORS = ['#2563eb', '#dc2626', '#f59e0b', '#059669', '#7c3aed', '#0891b2', '#db2777', '#65a30d'];
+const TYPE_COLORS = ['#2563eb', '#dc2626', '#f59e0b', '#059669', '#7c3aed', '#0891b2', '#db2777', '#65a30d'];
+
+/**
+ * One small vertical bar chart for a single metric across years.
+ * Used three times: accidents / deaths / injured.
+ */
+function YearlyBars({ title, data, color, valueKey }) {
+  const empty = data.length === 0 || data.every((d) => d[valueKey] === 0);
+  return (
+    <div className="panel">
+      <div className="panel-header">
+        <div className="panel-title">{title}</div>
+        <div className="panel-meta">By year</div>
+      </div>
+      <div className="panel-body" style={{ height: 240 }}>
+        {empty ? (
+          <div className="empty-state">No data for current filters</div>
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data} margin={{ top: 18, right: 8, left: 0, bottom: 4 }}>
+              <CartesianGrid stroke="#e1e5eb" strokeDasharray="3 3" vertical={false} />
+              <XAxis
+                dataKey="year"
+                tick={{ fontSize: 12, fill: '#6b7785' }}
+                stroke="#e1e5eb"
+              />
+              <YAxis tick={{ fontSize: 11, fill: '#6b7785' }} stroke="#e1e5eb" />
+              <Tooltip
+                cursor={{ fill: 'rgba(37, 99, 235, 0.06)' }}
+                contentStyle={{
+                  fontSize: 12,
+                  borderRadius: 6,
+                  border: '1px solid #e1e5eb',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                }}
+              />
+              <Bar dataKey={valueKey} fill={color} radius={[4, 4, 0, 0]}>
+                <LabelList
+                  dataKey={valueKey}
+                  position="top"
+                  style={{ fontSize: 11, fill: '#6b7785', fontWeight: 500 }}
+                />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function AccidentCharts({ data }) {
   const byYear = useMemo(() => {
@@ -55,35 +103,11 @@ export default function AccidentCharts({ data }) {
 
   return (
     <>
-      <div className="panel">
-        <div className="panel-header">
-          <div className="panel-title">Accidents over time</div>
-          <div className="panel-meta">By year</div>
-        </div>
-        <div className="panel-body" style={{ height: 260 }}>
-          {byYear.length === 0 ? (
-            <div className="empty-state">No data for current filters</div>
-          ) : (
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={byYear} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
-                <CartesianGrid stroke="#e1e5eb" strokeDasharray="3 3" />
-                <XAxis dataKey="year" tick={{ fontSize: 12, fill: '#6b7785' }} stroke="#e1e5eb" />
-                <YAxis tick={{ fontSize: 12, fill: '#6b7785' }} stroke="#e1e5eb" />
-                <Tooltip
-                  contentStyle={{
-                    fontSize: 12,
-                    borderRadius: 6,
-                    border: '1px solid #e1e5eb',
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-                  }}
-                />
-                <Line type="monotone" dataKey="accidents" stroke="#2563eb" strokeWidth={2} dot={{ r: 4 }} name="Accidents" />
-                <Line type="monotone" dataKey="deaths" stroke="#dc2626" strokeWidth={2} dot={{ r: 4 }} name="Deaths" />
-                <Line type="monotone" dataKey="injured" stroke="#f59e0b" strokeWidth={2} dot={{ r: 4 }} name="Injured" />
-              </LineChart>
-            </ResponsiveContainer>
-          )}
-        </div>
+      {/* Three vertical bar charts side-by-side — accidents / deaths / injured by year */}
+      <div className="yearly-bars-grid">
+        <YearlyBars title="Accidents per year" data={byYear} color="#2563eb" valueKey="accidents" />
+        <YearlyBars title="Deaths per year" data={byYear} color="#dc2626" valueKey="deaths" />
+        <YearlyBars title="Injured per year" data={byYear} color="#f59e0b" valueKey="injured" />
       </div>
 
       <div className="charts-grid">
@@ -117,7 +141,7 @@ export default function AccidentCharts({ data }) {
                   />
                   <Bar dataKey="count" radius={[0, 4, 4, 0]}>
                     {byType.map((_, i) => (
-                      <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                      <Cell key={i} fill={TYPE_COLORS[i % TYPE_COLORS.length]} />
                     ))}
                   </Bar>
                 </BarChart>
@@ -128,7 +152,7 @@ export default function AccidentCharts({ data }) {
 
         <div className="panel">
           <div className="panel-header">
-            <div className="panel-title">Top regions</div>
+            <div className="panel-title">Top districts</div>
             <div className="panel-meta">Top 10</div>
           </div>
           <div className="panel-body" style={{ height: 300 }}>

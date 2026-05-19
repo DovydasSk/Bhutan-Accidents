@@ -66,7 +66,7 @@ export default function AccidentTable({ data }) {
               </th>
               <th>Type</th>
               <th>Location / Place</th>
-              <th>Region</th>
+              <th>District</th>
               <th>Division</th>
               <th style={{ cursor: 'pointer' }} onClick={() => toggleSort('deaths')}>
                 Deaths{sortArrow('deaths')}
